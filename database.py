@@ -32,6 +32,8 @@ class ProductDB(Base):
     score = Column(Float)
     nutrition = Column(JSON, nullable=True)
     extra = Column(JSON, nullable=True)
+    image_front = Column(String, nullable=True)
+    image_ingredients = Column(String, nullable=True)
 
 
 class Product(BaseModel):
@@ -42,6 +44,8 @@ class Product(BaseModel):
     score: Optional[float] = None
     nutrition: Optional[dict] = None
     extra: Optional[dict] = None
+    image_front: Optional[str] = None
+    image_ingredients: Optional[str] = None
 
 
     model_config = {
@@ -81,7 +85,9 @@ class Database:
                 score=product.score,
                 nutrition=product.nutrition,
                 allergens=product.allergens,
-                extra=product.extra
+                extra=product.extra,
+                image_front=product.image_front,
+                image_ingredients=product.image_ingredients,
             )
             session.add(db_product)
             await session.commit()
@@ -104,6 +110,8 @@ class Database:
                 existing.nutrition = product.nutrition
                 existing.allergens = product.allergens
                 existing.extra = product.extra
+                existing.image_front = product.image_front
+                existing.image_ingredients = product.image_ingredients
                 session.add(existing)
                 print(f"Обновлены данные по баркоду {product.barcode}")
             else:
@@ -114,7 +122,9 @@ class Database:
                     score=product.score,
                     nutrition=product.nutrition,
                     allergens=product.allergens,
-                    extra=product.extra
+                    extra=product.extra,
+                    image_front=product.image_front,
+                    image_ingredients=product.image_ingredients,
                 )
                 session.add(db_product)
                 print(f"Добавлены данные по баркоду {product.barcode}")

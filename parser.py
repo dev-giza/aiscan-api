@@ -24,6 +24,7 @@ def extract_product_details(product: dict) -> dict:
         "created_t": product.get("created_t", ""),
         "data_sources": product.get("data_sources", ""),
         "image_front_url": product.get("image_front_url", ""),
+        "image_ingredients_url": product.get("image_ingredients_url", ""),
         "ingredients": product.get("ingredients", ""),
         "labels": product.get("labels", ""),
         "known_ingredients_n": product.get("known_ingredients_n", ""),
@@ -77,3 +78,38 @@ async def fetch_from_barcode_list(barcode: str) -> Optional[dict]:
         except Exception as e:
             print(f"Ошибка при запросе Barcode List: {e}")
     return None
+
+
+async def fetch_from_barcode_list_com(barcode: str) -> Optional[dict]:
+    """
+    Альтернативный фолбэк: Получает данные с barcode-list.com.
+    Извлекает название продукта из таблицы, где класс — 'randomBarcodes'.
+    """
+    BARCODELIST_COM_URL = f"https://barcode-list.com/barcode/EN/barcode-{barcode}/Search.htm"
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(BARCODELIST_COM_URL, timeout=10)
+            if response.status_code == 200:
+                html_text = response.text
+                soup = BeautifulSoup(html_text, "html.parser")
+                table = soup.find("table", class_="randomBarcodes")
+                if not table:
+                    table = soup.find("table")  
+                if table:
+                    rows = table.find_all("tr")
+                    if len(rows) > 1:
+                        data_row = rows[1]
+                        tds = data_row.find_all("td")
+                        if len(tds) >= 3:
+                            product_name = tds[2].text.strip()
+                            return {"product_name": product_name}
+        except Exception as e:
+            print(f"Ошибка при запросе Barcode List COM: {e}")
+    return None
+
+async def fetch_product_name(barcode: str) -> Optional[dict]:
+    result = await fetch_from_barcode_list(barcode)
+    print(result)
+    if not result:
+        result = await fetch_from_barcode_list_com(barcode)
+    return result

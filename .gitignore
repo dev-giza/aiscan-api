@@ -2,3 +2,8 @@
 .env
 __pycache__
 pg-container
+docker-compose.yml
+Dockerfile
+/static
+static
+static/images

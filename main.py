@@ -1,3 +1,4 @@
+import os
 import base64
 import uvicorn
 from fastapi import FastAPI, HTTPException, File, UploadFile, Form
@@ -5,7 +6,7 @@ from typing import List
 
 from database import db, Product
 from analyzer import analyze_data, analyze_image, compress_image
-from parser import fetch_from_openfoodfacts, fetch_from_barcode_list
+from parser import fetch_from_openfoodfacts, fetch_product_name
 
 
 app = FastAPI(title="AIScan API")
@@ -23,7 +24,7 @@ async def find_product(barcode: str):
 
     # API 1
     details = await fetch_from_openfoodfacts(barcode)
-    if details:
+    if details and details.get("product_name") and details.get("ingredients_text"):
         # Analyzer
         analysis = await analyze_data(details)
 
@@ -35,6 +36,8 @@ async def find_product(barcode: str):
             score=analysis.get("overall_score"),
             nutrition=analysis.get("nutrition"),
             allergens=analysis.get("allergens"),
+            image_front=details.get("image_front_url"),
+            image_ingredients=details.get("image_ingredients_url"),
             extra={
                 "ingredients": analysis.get("ingredients"),
                 "explanation_score": analysis.get("explanation_score"),
@@ -47,7 +50,7 @@ async def find_product(barcode: str):
         await db.save_data(new_product)
         return new_product
 
-    fallback_details = await fetch_from_barcode_list(barcode)
+    fallback_details = await fetch_product_name(barcode)
     if fallback_details:
         product_name = fallback_details.get("product_name", "No Product Name")
         fallback_details.pop("product_name", None)
@@ -59,15 +62,31 @@ async def find_product(barcode: str):
 
 @app.post("/update", response_model=Product)
 async def update_product(barcode: str, images: List[UploadFile] = File(...)):
+    if len(images) != 2:
+        raise HTTPException(status_code=400, detail="Нужно загрузить ровно 2 фотографии: фронт и состав.")
     # images
-    image_base64_list = []
-    for image in images:
+    image_paths = []
+    base64_images = []
+
+    os.makedirs("static/images", exist_ok=True)
+
+    for i, image in enumerate(images):
         contents = await image.read()
-        compressed = compress_image(contents, quality=90) 
+        compressed = compress_image(contents, quality=90)
+
+        suffix = "front" if i == 0 else "ingredients"
+        filename = f"{barcode}_{suffix}.jpg"
+        filepath = os.path.join("static/images", filename)
+        with open(filepath, "wb") as f:
+            f.write(compressed)
+        url_path = f"/static/images/{filename}"
+        image_paths.append(url_path)
+
         encoded = base64.b64encode(compressed).decode('utf-8')
-        image_base64_list.append(encoded)
-    analysis = await analyze_image(barcode, image_base64_list)
-    fallback_details = await fetch_from_barcode_list(barcode)
+        base64_images.append(encoded)
+
+    analysis = await analyze_image(barcode, base64_images)
+    fallback_details = await fetch_product_name(barcode)
     new_product = Product(
         barcode=barcode,
         product_name=fallback_details.get("product_name", "No Product Name"),
@@ -75,6 +94,8 @@ async def update_product(barcode: str, images: List[UploadFile] = File(...)):
         score=analysis.get("overall_score", 0),
         nutrition=analysis.get("nutrition"),
         allergens=analysis.get("allergens"),
+        image_front=image_paths[0],
+        image_ingredients=image_paths[1],
         extra={
             "ingredients": analysis.get("ingredients"),
             "explanation_score": analysis.get("explanation_score"),
