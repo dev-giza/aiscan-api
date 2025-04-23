@@ -108,6 +108,47 @@ async def update_product(barcode: str, images: List[UploadFile] = File(...)):
     await db.upsert_data(new_product)
     return new_product
 
+@app.post("/reprocess/{barcode}", response_model=Product)
+async def reprocess_product(barcode: str):
+    # Удаляем существующий продукт
+    existing = await db.find_data(barcode)
+    if existing:
+        await db.delete_data(barcode)
+
+    # Повторно ищем как в /find
+    details = await fetch_from_openfoodfacts(barcode)
+    if details and details.get("product_name") and details.get("ingredients_text"):
+        analysis = await analyze_data(details)
+        new_product = Product(
+            barcode=barcode,
+            product_name=analysis.get("product_name", "No Product Name"),
+            manufacturer=analysis.get("manufacturer"),
+            score=analysis.get("overall_score"),
+            nutrition=analysis.get("nutrition"),
+            allergens=analysis.get("allergens"),
+            image_front=details.get("image_front_url"),
+            image_ingredients=details.get("image_ingredients_url"),
+            extra={
+                "ingredients": analysis.get("ingredients"),
+                "explanation_score": analysis.get("explanation_score"),
+                "harmful_components": analysis.get("harmful_components"),
+                "recommendedfor": analysis.get("recommendedfor"),
+                "frequency": analysis.get("frequency"),
+                "alternatives": analysis.get("alternatives")
+            }
+        )
+        await db.save_data(new_product)
+        return new_product
+
+    fallback_details = await fetch_product_name(barcode)
+    if fallback_details:
+        product_name = fallback_details.get("product_name", "No Product Name")
+        fallback_details.pop("product_name", None)
+        new_product = Product(barcode=barcode, product_name=product_name, **fallback_details)
+        await db.save_data(new_product)
+        return new_product
+
+    raise HTTPException(status_code=404, detail="Не удалось переанализировать продукт")
 
 @app.get("/products", response_model=List[Product])
 async def get_all_products():

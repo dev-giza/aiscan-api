@@ -98,6 +98,13 @@ class Database:
             result = await session.execute(select(ProductDB))
             products = result.scalars().all()
             return [Product.model_validate(p) for p in products]
+        
+    async def delete_data(self, barcode: str) -> None:
+        async with async_session() as session:
+            await session.execute(
+                ProductDB.__table__.delete().where(ProductDB.barcode == barcode)
+            )
+            await session.commit()
 
     async def upsert_data(self, product: Product) -> None:
         async with async_session() as session:
