@@ -1,5 +1,8 @@
+
+import io
 import os
 import base64
+from PIL import Image
 import uvicorn
 from fastapi import FastAPI, HTTPException, File, UploadFile, Form
 from typing import List
@@ -8,6 +11,16 @@ from database import db, Product
 from analyzer import analyze_data, analyze_image, compress_image
 from parser import fetch_from_openfoodfacts, fetch_product_name
 
+MAX_FILE_SIZE_MB = 10
+MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+ALLOWED_EXTENSIONS = {"jpeg", "jpg", "png", "webp"}
+
+def convert_to_jpeg(image_bytes: bytes) -> bytes:
+    with Image.open(io.BytesIO(image_bytes)) as img:
+        buffer = io.BytesIO()
+        rgb_img = img.convert('RGB')  # На случай, если исходник был с альфа-каналом (например, PNG)
+        rgb_img.save(buffer, format="JPEG", quality=90)
+        return buffer.getvalue()
 
 app = FastAPI(title="AIScan API")
 
@@ -72,7 +85,20 @@ async def update_product(barcode: str, images: List[UploadFile] = File(...)):
 
     for i, image in enumerate(images):
         contents = await image.read()
-        compressed = compress_image(contents, quality=90)
+        if len(contents) > MAX_FILE_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413, 
+                detail=f"Файл {image.filename} слишком большой. Максимальный размер: {MAX_FILE_SIZE_MB}MB."
+            )
+        
+        filename_lower = image.filename.lower()
+        if not any(filename_lower.endswith(f".{ext}") for ext in ALLOWED_EXTENSIONS):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Недопустимый формат файла {image.filename}. Разрешены только: {', '.join(ALLOWED_EXTENSIONS)}."
+            )
+        
+        compressed = convert_to_jpeg(contents)
 
         suffix = "front" if i == 0 else "ingredients"
         filename = f"{barcode}_{suffix}.jpg"
