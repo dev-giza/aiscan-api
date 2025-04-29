@@ -64,14 +64,15 @@ async def find_product(barcode: str):
         return new_product
 
     fallback_details = await fetch_product_name(barcode)
-    if fallback_details:
-        product_name = fallback_details.get("product_name", "No Product Name")
-        fallback_details.pop("product_name", None)
-        new_product = Product(barcode=barcode, product_name=product_name, **fallback_details)
-        await db.save_data(new_product)
-        return new_product
+    if not fallback_details:
+        raise HTTPException(status_code=404, detail="Информация о продукте не найдена")
+    product_name = fallback_details.get("product_name", "No Product Name")
 
-    raise HTTPException(status_code=404, detail="Продукт не найден")
+    fallback_details.pop("product_name", None)
+    new_product = Product(barcode=barcode, product_name=product_name, **fallback_details)
+    await db.save_data(new_product)
+    return new_product
+
 
 @app.post("/update", response_model=Product)
 async def update_product(barcode: str, images: List[UploadFile] = File(...)):
