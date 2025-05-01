@@ -47,6 +47,10 @@ instructions = (
     "If some data is missing, use null or an empty string."
     "Translate all text values to Russian, while keys remain in English. "
     "Always return only a valid JSON object."
+    "Important: Only analyze items that are food products or personal care and hygiene products. "
+    "Important: If the scanned product does not fall into one of these categories, return an empty JSON object: {}"
+    "Important: Ensure the product_name is meaningful, correctly extracted, and logically matches the product type."
+    "Important: Be sure to highlight and include all food additives (E-numbers) found in the product as part of the harmful_components or ingredients if applicable."
 )
 
 async def analyze_data(data: dict) -> dict:

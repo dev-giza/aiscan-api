@@ -60,10 +60,11 @@ class Database:
 
     async def init_db(self) -> None:
 
-        # Cleaner
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-            print("Все таблицы удалены.")
+        # Cleaner        
+        if os.getenv("RESET_DB"):
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.drop_all)
+                print("Все таблицы удалены.")
 
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
