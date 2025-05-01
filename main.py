@@ -1,4 +1,3 @@
-
 import io
 import os
 import base64
@@ -116,7 +115,7 @@ async def update_product(barcode: str, images: List[UploadFile] = File(...)):
     fallback_details = await fetch_product_name(barcode)
     new_product = Product(
         barcode=barcode,
-        product_name=fallback_details.get("product_name", "No Product Name"),
+        product_name=analysis.get("product_name", "No Product Name"),
         manufacturer=analysis.get("manufacturer"),
         score=analysis.get("overall_score", 0),
         nutrition=analysis.get("nutrition"),
