@@ -106,7 +106,7 @@ async def update_product(barcode: str, images: List[UploadFile] = File(...)):
         filepath = os.path.join("static/images", filename)
         with open(filepath, "wb") as f:
             f.write(compressed)
-        url_path = f"/static/images/{filename}"
+        url_path = f"https://iscan.store/static/images/{filename}"
         image_paths.append(url_path)
 
         encoded = base64.b64encode(compressed).decode('utf-8')
