@@ -7,3 +7,4 @@ Dockerfile
 /static
 static
 static/images
+task.txt

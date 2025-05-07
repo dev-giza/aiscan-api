@@ -1,10 +1,10 @@
 import os
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import Column, String, Integer, Float, select, JSON
-from pydantic import BaseModel
-from typing import Optional, Union, List
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import select
+from typing import Optional, List
+from models import Product, ProductDB, ProductStatus
 
 load_dotenv()
 
@@ -19,54 +19,18 @@ engine = create_async_engine(
     connect_args={"statement_cache_size": 0}
 )
 async_session = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-Base = declarative_base()
-
-
-class ProductDB(Base):
-    __tablename__ = "products"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    product_name = Column(String, index=True)
-    barcode = Column(String, unique=True, index=True)
-    manufacturer = Column(String, nullable=True)
-    allergens = Column(JSON, nullable=True)
-    score = Column(Float)
-    nutrition = Column(JSON, nullable=True)
-    extra = Column(JSON, nullable=True)
-    image_front = Column(String, nullable=True)
-    image_ingredients = Column(String, nullable=True)
-
-
-class Product(BaseModel):
-    product_name: str
-    barcode: str
-    manufacturer: Optional[str] = None
-    allergens: Optional[Union[dict, str]] = None 
-    score: Optional[float] = None
-    nutrition: Optional[dict] = None
-    extra: Optional[dict] = None
-    image_front: Optional[str] = None
-    image_ingredients: Optional[str] = None
-
-
-    model_config = {
-        "from_attributes": True,
-        "extra": "allow",
-    }
-
 
 class Database:
     def __init__(self):
         self.engine = engine
 
     async def init_db(self) -> None:
-
-        # Cleaner        
         if os.getenv("RESET_DB"):
             async with engine.begin() as conn:
+                from models import Base
                 await conn.run_sync(Base.metadata.drop_all)
-                print("Все таблицы удалены.")
-
         async with self.engine.begin() as conn:
+            from models import Base
             await conn.run_sync(Base.metadata.create_all)
 
     async def find_data(self, barcode: str) -> Optional[Product]:
@@ -89,10 +53,11 @@ class Database:
                 extra=product.extra,
                 image_front=product.image_front,
                 image_ingredients=product.image_ingredients,
+                tags=product.tags,
+                status=product.status or ProductStatus.pending
             )
             session.add(db_product)
             await session.commit()
-            print(f"Данные по баркоду {product.barcode} сохранены.")
 
     async def get_all_data(self) -> List[Product]:
         async with async_session() as session:
@@ -120,8 +85,9 @@ class Database:
                 existing.extra = product.extra
                 existing.image_front = product.image_front
                 existing.image_ingredients = product.image_ingredients
+                existing.tags = product.tags
+                existing.status = product.status or ProductStatus.pending
                 session.add(existing)
-                print(f"Обновлены данные по баркоду {product.barcode}")
             else:
                 db_product = ProductDB(
                     barcode=product.barcode,
@@ -133,12 +99,10 @@ class Database:
                     extra=product.extra,
                     image_front=product.image_front,
                     image_ingredients=product.image_ingredients,
+                    tags=product.tags,
+                    status=product.status or ProductStatus.pending
                 )
                 session.add(db_product)
-                print(f"Добавлены данные по баркоду {product.barcode}")
             await session.commit()
-
-
-
 
 db = Database()
