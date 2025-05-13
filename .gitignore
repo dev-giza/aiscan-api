@@ -8,3 +8,4 @@ Dockerfile
 static
 static/images
 task.txt
+.DS_Store
