@@ -6,6 +6,9 @@ from database import db, Product, ProductStatus
 from services.analyzer import analyzer
 from services.parser import parser
 from services.media import media
+from services.locker import verify_api_key
+import requests
+import asyncio
 
 router = APIRouter(tags=["Scanner"])
 
@@ -13,23 +16,43 @@ MAX_FILE_SIZE_MB = 10
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 ALLOWED_EXTENSIONS = {"jpeg", "jpg", "png", "webp"}
 
-# Проверка API-ключа
-def verify_api_key(x_api_key: str = Header(...)):
-    expected_key = os.getenv("API_SECRET_KEY")
-    if not expected_key or x_api_key != expected_key:
-        raise HTTPException(status_code=403, detail="Forbidden: invalid API key")
+def download_and_save_image_sync(url: str, barcode: str, suffix: str = "roskachestvo") -> str:
+    filename = f"{barcode}_{suffix}.jpg"
+    filepath = os.path.join("static/images", filename)
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, timeout=10, headers=headers)
+        if response.status_code == 200:
+            content_type = response.headers.get("content-type", "")
+            if not any(img in content_type for img in ("image/jpeg", "image/png", "image/webp")):
+                print(f"Файл по ссылке {url} не является изображением (jpeg/png/webp), content-type: {content_type}")
+                return None
+            os.makedirs("static/images", exist_ok=True)
+            with open(filepath, "wb") as f:
+                f.write(response.content)
+            return f"https://iscan.store/static/images/{filename}"
+        else:
+            print(f"Не удалось скачать изображение: {url}, статус {response.status_code}")
+    except Exception as e:
+        print(f"Ошибка при скачивании изображения: {e}")
+    return None
 
 @router.get("/find/{barcode}", response_model=Product)
 async def find_product(
     barcode: str,
-    api_key: None = Depends(verify_api_key)
+    api_key: None = Depends(lambda x_api_key: verify_api_key(os.getenv("API_SECRET_KEY"), x_api_key))
 ):
+    parser.validate_barcode(barcode)
     existing = await db.find_data(barcode)
     if existing:
         return existing
     # Сначала пробуем Роскачество
     roskachestvo_data = await parser.fetch_from_roskachestvo(barcode)
     if roskachestvo_data and roskachestvo_data.get("product", {}).get("title"):
+        image_url = roskachestvo_data["product"].get("thumbnail")
+        local_image_url = None
+        if image_url:
+            local_image_url = await asyncio.to_thread(download_and_save_image_sync, image_url, barcode, "roskachestvo")
         analysis = await analyzer.analyze_data(roskachestvo_data["product"])
         new_product = Product(
             barcode=barcode,
@@ -38,15 +61,13 @@ async def find_product(
             score=analysis.get("overall_score", roskachestvo_data["product"].get("total_rating")),
             nutrition=analysis.get("nutrition"),
             allergens=analysis.get("allergens"),
-            image_front=roskachestvo_data["product"].get("thumbnail"),
-            image_ingredients=roskachestvo_data["product"].get("image"),
+            image_front=local_image_url or roskachestvo_data["product"].get("thumbnail"),
+            image_ingredients=None,
             tags=analysis.get("tags"),
             status=ProductStatus.verified,
             extra={
                 "description": roskachestvo_data["product"].get("description"),
                 "category_name": roskachestvo_data["product"].get("category_name"),
-                "product_link": roskachestvo_data["product"].get("product_link"),
-                "price": roskachestvo_data["product"].get("price"),
                 "ingredients": analysis.get("ingredients"),
                 "explanation_score": analysis.get("explanation_score"),
                 "harmful_components": analysis.get("harmful_components"),
@@ -79,19 +100,39 @@ async def find_product(
                 "harmful_components": analysis.get("harmful_components"),
                 "recommendedfor": analysis.get("recommendedfor"),
                 "frequency": analysis.get("frequency"),
-                "alternatives": analysis.get("alternatives")
+                "alternatives": analysis.get("alternatives"),
             }
         )
         await db.save_data(new_product)
         return new_product
-    raise HTTPException(status_code=404, detail="Информация о продукте не найдена")
+    # Если не найдено ни в Роскачестве, ни в OpenFoodFacts — ищем в barcode-list
+    exists = await parser.product_exists_in_barcode_lists(barcode)
+    if not exists:
+        raise HTTPException(status_code=404, detail="Продукт с таким штрихкодом не найден ни в одной базе")
+    # Если найден только в barcode-list, сохраняем только barcode и возвращаем null-данные
+    empty_product = Product(
+        barcode=barcode,
+        product_name="",
+        manufacturer=None,
+        score=None,
+        nutrition=None,
+        allergens=None,
+        image_front=None,
+        image_ingredients=None,
+        tags=None,
+        status=None,
+        extra=None
+    )
+    await db.save_data(empty_product)
+    return empty_product
 
 @router.post("/update", response_model=Product)
 async def update_product(
     barcode: str,
     images: List[UploadFile] = File(...),
-    api_key: None = Depends(verify_api_key)
+    api_key: None = Depends(lambda x_api_key: verify_api_key(os.getenv("API_SECRET_KEY"), x_api_key))
 ):
+    parser.validate_barcode(barcode)
     if len(images) != 2:
         raise HTTPException(status_code=400, detail="Нужно загрузить ровно 2 фотографии: фронт и состав.")
     image_paths = []

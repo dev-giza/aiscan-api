@@ -4,6 +4,8 @@ import requests
 import openai
 from typing import Optional
 import json
+from bs4 import BeautifulSoup
+from fastapi import HTTPException
 
 
 class Parser:
@@ -13,6 +15,14 @@ class Parser:
         if not self.api_key:
             print("Предупреждение: OPENAI_API_KEY не найден в переменных окружения")
         openai.api_key = self.api_key
+    
+    
+    def validate_barcode(self, barcode: str):
+        if not (barcode.isdigit() and len(barcode) in (8, 12, 13)):
+            raise HTTPException(
+                status_code=400,
+                detail="Некорректный формат штрихкода. Допустимы только 8, 12 или 13 цифр."
+            )
 
     # Для очистки данных пришедших с openfoodfacts
     def extract_product_details(self, product: dict) -> dict:
@@ -86,23 +96,8 @@ class Parser:
                 "thumbnail": response_data.get("thumbnail", ""),
             }
             
-            # Add research data if available
             if research:
                 main_product["image"] = research.get("image", "")
-            
-            # Extract recommendations - this can handle any quantity
-            # recommendations = []
-            # for rec in response_data.get("recommendations", []):
-            #     recommendation = {
-            #         "id": rec.get("id", ""),
-            #         "title": rec.get("title", ""),
-            #         "total_rating": rec.get("total_rating", 0),
-            #         "manufacturer": rec.get("manufacturer", ""),
-            #         "price": rec.get("price", ""),
-            #         "thumbnail": rec.get("thumbnail", ""),
-            #         "category_name": rec.get("category_name", "")
-            #     }
-            #     recommendations.append(recommendation)
             
             result = {
                 "product": main_product,
@@ -114,4 +109,35 @@ class Parser:
             print(f"Error: {e}")
             return None
         
+    async def product_exists_in_barcode_lists(self, barcode: str) -> bool:
+        """
+        Проверяет наличие продукта по штрихкоду на barcode-list.ru и barcode-list.com.
+        Возвращает True, если продукт найден хотя бы на одном из сайтов, иначе False.
+        """
+        urls = [
+            f"https://barcode-list.ru/barcode/RU/%D0%9F%D0%BE%D0%B8%D1%81%D0%BA.htm?barcode={barcode}",
+            f"https://barcode-list.com/barcode/EN/barcode-{barcode}/Search.htm"
+        ]
+        for url in urls:
+            async with httpx.AsyncClient() as client:
+                try:
+                    response = await client.get(url, timeout=10)
+                    if response.status_code == 200:
+                        html_text = response.text
+                        soup = BeautifulSoup(html_text, "html.parser")
+                        table = soup.find("table", class_="randomBarcodes")
+                        if not table:
+                            table = soup.find("table")
+                        if table:
+                            rows = table.find_all("tr")
+                            if len(rows) > 1:
+                                tds = rows[1].find_all("td")
+                                if len(tds) >= 3:
+                                    product_name = tds[2].get_text(strip=True)
+                                    if product_name:
+                                        return True
+                except Exception as e:
+                    print(f"Ошибка при запросе {url}: {e}")
+        return False
+
 parser = Parser()

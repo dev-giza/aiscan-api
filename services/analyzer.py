@@ -43,15 +43,13 @@ class Analyzer:
                 "frequency: <string>,"
                 "alternatives: <string>,"
                 "tags: [<string>, ...],"
+                
+                "}"
             "}"
-            "Only process food or personal care/hygiene products. If the item is unrelated, return {}."
+            "Only process food or hygiene products. Others return {}. "
             "If the scanned product is outside these categories (e.g. electronics, tools, toys), return an empty JSON object: {} "
-
-
-
             "Translate all text values (not keys) to Russian. Ensure 'product_name' is natural Russian. Translate it if needed."
             "Add explanation for the score and the score itself. Make sure it's in Russian, short and clear."
-
             "Important: If the product has no harmful components, is made with natural ingredients, and is generally suitable for most people — the score must be higher than 85."
             "Important: Double-check the logic of your score. If the explanation or ingredients are good — the score should reflect that."
             "Assign a fair and objective 'score' from 0 to 100. Use this scale:"
@@ -59,10 +57,8 @@ class Analyzer:
             "- 25–50: poor quality (contains harmful additives or high calories/sodium)"
             "- 50–75: acceptable (some additives, but balanced)"
             "- 75–100: healthy (natural, few/no additives, good nutritional profile)"
-        
             "Explanation_score must clearly justify the 'score'. Mention both harmful (E-additives, fat, sugar, salt) and healthy aspects (natural, vitamins). Avoid vague answers."
             "Score must reflect the presence of harmful additives (E621, E635, etc.) and nutrition."
-    
             "List all harmful E-additives in both 'ingredients' and 'harmful_components'."
             "In 'tags', include 3–6 useful labels like: 'продукты питания', 'гигиена', 'говядина', 'без глютена', 'полуфабрикаты'."
             "Before returning the final JSON, carefully review all values. Avoid extreme scores unless well justified, and ensure overall consistency in the output."
