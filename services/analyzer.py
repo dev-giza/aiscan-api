@@ -43,7 +43,6 @@ class Analyzer:
                 "frequency: <string>,"
                 "alternatives: <string>,"
                 "tags: [<string>, ...],"
-                
                 "}"
             "}"
             "Only process food or hygiene products. Others return {}. "

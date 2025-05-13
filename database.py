@@ -55,7 +55,6 @@ class Database:
                 image_ingredients=product.image_ingredients,
                 tags=product.tags,
                 status=product.status or ProductStatus.pending,
-                seo_keywords=product.seo_keywords
             )
             session.add(db_product)
             await session.commit()
@@ -88,7 +87,6 @@ class Database:
                 existing.image_ingredients = product.image_ingredients
                 existing.tags = product.tags
                 existing.status = product.status or ProductStatus.pending
-                existing.seo_keywords = product.seo_keywords
                 session.add(existing)
             else:
                 db_product = ProductDB(
@@ -103,7 +101,6 @@ class Database:
                     image_ingredients=product.image_ingredients,
                     tags=product.tags,
                     status=product.status or ProductStatus.pending,
-                    seo_keywords=product.seo_keywords
                 )
                 session.add(db_product)
             await session.commit()
