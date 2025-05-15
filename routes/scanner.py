@@ -126,7 +126,7 @@ async def find_product(
     await db.save_data(empty_product)
     return empty_product
 
-@router.post("/update", response_model=Product)
+@router.post("/update/{barcode}", response_model=Product)
 async def update_product(
     barcode: str,
     images: List[UploadFile] = File(...),
