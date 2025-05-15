@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Header, Depends, Query, Body
-from typing import List, Dict
-from database import db, Product, ProductDB
+from typing import List, Dict, Optional, Union
+from database import db, Product, ProductDB, async_session
 import os
 from services.locker import verify_api_key
 from sqlalchemy import select
@@ -8,8 +8,23 @@ from services.parser import parser
 import requests
 import asyncio
 from services.analyzer import analyzer
+from pydantic import BaseModel
 
 router = APIRouter(tags=["Panel"])
+
+class ProductUpdate(BaseModel):
+    product_name: Optional[str] = None
+    manufacturer: Optional[str] = None
+    score: Optional[float] = None
+    nutrition: Optional[dict] = None
+    extra: Optional[dict] = None
+    image_front: Optional[str] = None
+    image_ingredients: Optional[str] = None
+    tags: Optional[List[str]] = None
+    status: Optional[str] = None
+    allergens: Optional[Union[dict, str]] = None
+    class Config:
+        extra = "allow"
 
 @router.get("/products", response_model=List[Product])
 async def panel_get_all_products(
@@ -96,16 +111,42 @@ def download_and_save_image_sync(url: str, barcode: str, suffix: str = "roskache
 @router.patch("/products/{barcode}", response_model=Product)
 async def panel_update_product(
     barcode: str,
-    product_update: Product = Body(...),
+    product_update: ProductUpdate = Body(...),
     api_key: None = Depends(lambda x_api_admin_key: verify_api_key(os.getenv("API_ADMIN_KEY"), x_api_admin_key))
 ):
-    async with db.engine.begin() as conn:
-        result = await conn.execute(select(ProductDB).where(ProductDB.barcode == barcode))
-        db_product = result.scalars().first()
-        if not db_product:
-            raise HTTPException(status_code=404, detail="Продукт не найден")
-        update_data = product_update.model_dump(exclude_unset=True)
-        for key, value in update_data.items():
-            setattr(db_product, key, value)
-        conn.add(db_product)
-    return Product.model_validate(db_product) 
+    db_product = await db.get_db_product(barcode)
+    print("DEBUG db_product:", db_product, type(db_product))  # debug print
+    if not db_product:
+        raise HTTPException(status_code=404, detail="Продукт не найден")
+    update_data = product_update.model_dump(exclude_unset=True)
+    print("DEBUG update_data:", update_data)  # debug print
+    for key, value in update_data.items():
+        print(f"DEBUG setattr: {key} = {value}")  # debug print
+        setattr(db_product, key, value)
+    async with async_session() as session:
+        session.add(db_product)
+        await session.commit()
+    return Product.model_validate(db_product)
+
+@router.delete("/products/{barcode}")
+async def panel_delete_product(
+    barcode: str,
+    api_key: None = Depends(lambda x_api_admin_key: verify_api_key(os.getenv("API_ADMIN_KEY"), x_api_admin_key))
+):
+    # Найти продукт
+    product = await db.find_data(barcode)
+    if not product:
+        raise HTTPException(status_code=404, detail="Продукт не найден")
+    # Удалить фото, если есть
+    for img_url in [product.image_front, product.image_ingredients]:
+        if img_url and img_url.startswith("https://iscan.store/static/images/"):
+            filename = img_url.split("/static/images/")[-1]
+            filepath = os.path.join("static/images", filename)
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                except Exception as e:
+                    print(f"Ошибка при удалении файла {filepath}: {e}")
+    # Удалить продукт из базы
+    await db.delete_data(barcode)
+    return {"status": "success", "message": f"Продукт {barcode} и связанные фото удалены"} 

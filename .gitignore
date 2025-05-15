@@ -9,3 +9,4 @@ static
 static/images
 task.txt
 .DS_Store
+deploy-rules.txt

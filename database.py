@@ -105,4 +105,9 @@ class Database:
                 session.add(db_product)
             await session.commit()
 
+    async def get_db_product(self, barcode: str) -> Optional[ProductDB]:
+        async with async_session() as session:
+            result = await session.execute(select(ProductDB).filter(ProductDB.barcode == barcode))
+            return result.scalars().first()
+
 db = Database()
